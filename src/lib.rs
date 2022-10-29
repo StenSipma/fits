@@ -116,7 +116,7 @@ mod parsing_old {
                     Value::Boolean(x) => {
                         write!(f, "{}", if *x {"T"} else {"F"})},
                 }
-                
+
             }
         }
 
@@ -412,7 +412,7 @@ mod parsing_old {
 
         // Potentially convert the header to a HashMap
         // Check if the data unit exists for the PrimaryHDU (look at NAXIS)
-        
+
         // Calculate the total number of bytes
         let bytes: u64 = (axes.iter().product::<usize>() as u64 * (bitpix.abs() as u64)) / 8;
         println!("Total bytes: {}", bytes);

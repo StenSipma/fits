@@ -1,7 +1,7 @@
 //! Parsing
 //!
 //! Contains all the code related to parsing header FITS cards, according to the
-//! FITS standard. 
+//! FITS standard.
 //! https://fits.gsfc.nasa.gov/standard40/fits_standard40aa-le.pdf
 //!
 //! General parsing workflow:
@@ -12,7 +12,8 @@
 //!       Keyword has a '= ' at positions 8,9. Commentary has optionally a
 //!       '=' at 8 but not a ' ' at 9.
 
-use std::{slice::ChunksExact, error::Error};
+use std::slice::ChunksExact;
+use eyre::{eyre, Result};
 
 use crate::definitions;
 
@@ -44,7 +45,7 @@ pub enum Card<'a> {
 }
 
 impl Card<'_> {
-    fn parse_commentary<'a>(raw_card: &'a [u8]) -> Result<Card<'a>, dyn Error> {
+    fn parse_commentary<'a>(raw_card: &'a [u8]) -> Result<Card<'a>> {
         let (keyword, text) = raw_card.split_at(8);
         // remove the equal sign if it exists
         let text = if text[0] == b'=' {
@@ -56,7 +57,6 @@ impl Card<'_> {
     }
 
     fn parse_value<'a>(raw_card: &'a [u8], _iter: &mut ChunksExact<u8> ) -> Card<'a> {
-        
         // TODO: complete implementation, we need the `iter` since we can have
         // long strings.
         let (a, b) = raw_card.split_at(8);
@@ -76,7 +76,8 @@ pub fn parse_header<'a>(blocks: &'a mut ChunksExact<u8>) -> Vec<Card<'a>> {
         while let Some(raw_card) = cards_iter.next() {
             let card = match KeywordType::from_raw(raw_card) {
                 KeywordType::Commentary => {
-                    Card::parse_commentary(raw_card)
+                    let comm = Card::parse_commentary(raw_card);
+                    comm.unwrap()
                 },
                 KeywordType::Value => {
                     Card::parse_value(raw_card, &mut cards_iter)
@@ -104,14 +105,14 @@ mod tests {
 
     #[test]
     fn commentary_test() {
-        if let Card::Commentary(kw, v) = Card::parse_commentary(b"HISTORY =Someinterestingvalue") {
+        if let Card::Commentary(kw, v) = Card::parse_commentary(b"HISTORY =Someinterestingvalue").unwrap() {
             assert_eq!(kw, b"HISTORY ");
             assert_eq!(v, b"Someinterestingvalue");
         } else{
             assert!(false);
         }
 
-        if let Card::Commentary(kw, v) = Card::parse_commentary(b"COMMENT =Someotherinterestingvalue") {
+        if let Card::Commentary(kw, v) = Card::parse_commentary(b"COMMENT =Someotherinterestingvalue").unwrap() {
             assert_eq!(kw, b"COMMENT ");
             assert_eq!(v, b"Someotherinterestingvalue");
         } else{
