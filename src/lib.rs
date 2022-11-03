@@ -13,6 +13,7 @@ mod definitions {
     pub const HEADER_VALUE_INDICATOR: &str = "= ";
 
     // Specific header keywords
+    pub const HEADER_END_KEYWORD_FULL: &[u8] = b"END                                                                             ";
     pub const HEADER_END_KEYWORD: &str = "END";
     pub const HEADER_HISTORY_KEYWORD: &str = "HISTORY";
     pub const HEADER_COMMENT_KEYWORD: &str = "COMMENT";
@@ -30,7 +31,7 @@ mod parsing_old {
 
     use crate::{definitions, HeaderList};
 
-    fn print_header(header: &Vec<header::Keyword>) {
+    fn print_header(header: &Vec<header::RawKeyword>) {
         for keyword in header.into_iter() {
             keyword.print()
         }
@@ -41,30 +42,33 @@ mod parsing_old {
 
         #[derive(PartialEq)]
         #[derive(Debug)]
-
-        pub enum Keyword<'a> {
+        pub enum RawKeyword<'a> {
             End,
             History(&'a str),
             Comment(&'a str),
-            Continue(&'a str),
-            RawValue(&'a str, &'a str), // we have to process this later into the specific type
-            ParsedValue(&'a str, Value, &'a str) // This is the processed version, with a possible comment
+            RawValue(&'a str, &'a str),
         }
 
-        impl<'a> Keyword<'a> {
+        pub enum Keyword<'a> {
+            History(&'a str),
+            Comment(&'a str),
+            Value(&'a str, Value, &'a str),
+            Continue(&'a str, Value, &'a str),
+        }
+
+        impl<'a> RawKeyword<'a> {
             pub fn print(&self) {
                 // This is just a basic print function, mainly for a bit better debugging
                 match self {
-                    Keyword::ParsedValue(kw, value, comment) => println!("{:8} | {:>30} / {}", kw, value, comment),
-                    Keyword::RawValue(kw, value) => println!("{:8} | {:>30}", kw, value),
-                    Keyword::History(v)          => println!("{:8} {:>30}", definitions::HEADER_HISTORY_KEYWORD, v),
-                    Keyword::Comment(v)          => println!("{:8} {:>30}", definitions::HEADER_COMMENT_KEYWORD, v),
-                    Keyword::Continue(v)         => println!("{:8} {:>30}", definitions::HEADER_CONTINUE_KEYWORD, v),
-                    Keyword::End                 => println!("{:8}", definitions::HEADER_END_KEYWORD),
+                    // RawKeyword::ParsedValue(kw, value, comment) => println!("{:8} | {:>30} / {}", kw, value, comment),
+                    RawKeyword::RawValue(kw, value) => println!("{:8} | {:>30}", kw, value),
+                    RawKeyword::History(v)          => println!("{:8} {:>30}", definitions::HEADER_HISTORY_KEYWORD, v),
+                    RawKeyword::Comment(v)          => println!("{:8} {:>30}", definitions::HEADER_COMMENT_KEYWORD, v),
+                    RawKeyword::End                 => println!("{:8}", definitions::HEADER_END_KEYWORD),
                 }
             }
 
-            pub fn parse_from_bytes(keyword_bytes: &'a [u8]) -> Result<Keyword<'a>, Utf8Error> {
+            pub fn parse_from_bytes(keyword_bytes: &'a [u8]) -> Result<RawKeyword<'a>, Utf8Error> {
                 let keyword = str::from_utf8(keyword_bytes.into())?;
                 let (kw, _sep, value) = split_keyword(keyword);
 
@@ -73,11 +77,10 @@ mod parsing_old {
 
                 Ok (
                     match kw {
-                    definitions::HEADER_END_KEYWORD => {Keyword::End},
-                    definitions::HEADER_COMMENT_KEYWORD => {Keyword::Comment(value)},
-                    definitions::HEADER_CONTINUE_KEYWORD => {Keyword::Continue(value)},
-                    definitions::HEADER_HISTORY_KEYWORD => {Keyword::History(value)},
-                    kw => {Keyword::RawValue(kw, value)}
+                        definitions::HEADER_END_KEYWORD => {RawKeyword::End},
+                        definitions::HEADER_COMMENT_KEYWORD => {RawKeyword::Comment(value)},
+                        definitions::HEADER_HISTORY_KEYWORD => {RawKeyword::History(value)},
+                        kw => {RawKeyword::RawValue(kw, value)}
                 })
             }
         }
@@ -205,15 +208,11 @@ mod parsing_old {
                 let block = blocks.next().unwrap();
 
                 for keyword_bytes in block.chunks(definitions::HEADER_KEYWORD_SIZE) {
-                    match Keyword::parse_from_bytes(keyword_bytes).unwrap() {
-                        Keyword::End => {
+                    match RawKeyword::parse_from_bytes(keyword_bytes).unwrap() {
+                        RawKeyword::End => {
                             reading_header = false;
                             break;
                         },
-                        Keyword::RawValue(kw, rv) => {
-                            let val = Value::from_str(rv);
-                            header.push(Keyword::ParsedValue(kw, val, ""))
-                        }
                         keyword => {
                             header.push(keyword)
                         }
@@ -223,9 +222,10 @@ mod parsing_old {
             header
         }
 
+        // TODO: Move as method of a proper HDUList
         fn find_raw_value<'a, 'b>(header: &HeaderList<'a>, key: &'b str) -> Option<&'a str> {
             for kw in header.iter() {
-                if let Keyword::RawValue(k, v) = kw {
+                if let RawKeyword::RawValue(k, v) = kw {
                     if *k == key {
                         return Some(v);
                     }
@@ -234,17 +234,13 @@ mod parsing_old {
             None
         }
 
+        // TODO: Move as method of a proper HDUList
         fn find_value<'a, 'b>(header: &'a HeaderList<'a>, key: &'b str) -> Option<Value> {
             for kw in header.iter() {
                 match kw {
-                    Keyword::RawValue(k, v) => {
+                    RawKeyword::RawValue(k, v) => {
                         if *k == key {
                             return Some(Value::from_str(v))
-                        }
-                    },
-                    Keyword::ParsedValue(k, v, _) => {
-                        if *k == key {
-                            return Some(Value::from_value(v))
                         }
                     },
                     _ => { continue; }
@@ -296,33 +292,33 @@ mod parsing_old {
                 // Full keyword
                 let keyword = "SIMPLE  =                    T / conforms to FITS standard                      ";
                 let keyword_bytes = Vec::from_iter(keyword.bytes());
-                let res = Keyword::parse_from_bytes(&keyword_bytes);
-                assert_eq!(res.unwrap(), Keyword::RawValue("SIMPLE", "T / conforms to FITS standard"));
+                let res = RawKeyword::parse_from_bytes(&keyword_bytes);
+                assert_eq!(res.unwrap(), RawKeyword::RawValue("SIMPLE", "T / conforms to FITS standard"));
 
                 // No comment
                 let keyword = "SIMPLE  =                    T                                                  ";
                 let keyword_bytes = Vec::from_iter(keyword.bytes());
-                let res = Keyword::parse_from_bytes(&keyword_bytes);
-                assert_eq!(res.unwrap(), Keyword::RawValue("SIMPLE", "T"));
+                let res = RawKeyword::parse_from_bytes(&keyword_bytes);
+                assert_eq!(res.unwrap(), RawKeyword::RawValue("SIMPLE", "T"));
 
                 // No value separator
                 let keyword = "COMMENT This is a comment, and therefore does not have a value separator.       ";
                 let keyword_bytes = Vec::from_iter(keyword.bytes());
-                let res = Keyword::parse_from_bytes(&keyword_bytes);
-                assert_eq!(res.unwrap(), Keyword::Comment("This is a comment, and therefore does not have a value separator."));
+                let res = RawKeyword::parse_from_bytes(&keyword_bytes);
+                assert_eq!(res.unwrap(), RawKeyword::Comment("This is a comment, and therefore does not have a value separator."));
 
                 // End keyword
                 let keyword = "END                                                                             ";
                 let keyword_bytes = Vec::from_iter(keyword.bytes());
-                let res = Keyword::parse_from_bytes(&keyword_bytes);
-                assert_eq!(res.unwrap(), Keyword::End);
+                let res = RawKeyword::parse_from_bytes(&keyword_bytes);
+                assert_eq!(res.unwrap(), RawKeyword::End);
 
                 // Should fail:
                 // Unexpected '/' in the string value
                 let keyword = "KEYWORD =                       'something with a /       ' / and also a comment";
                 let keyword_bytes = Vec::from_iter(keyword.bytes());
-                let res = Keyword::parse_from_bytes(&keyword_bytes);
-                assert_eq!(res.unwrap(), Keyword::RawValue("KEYWORD", "'something with a /       ' / and also a comment"));
+                let res = RawKeyword::parse_from_bytes(&keyword_bytes);
+                assert_eq!(res.unwrap(), RawKeyword::RawValue("KEYWORD", "'something with a /       ' / and also a comment"));
 
                 let _tmp = "SIMPLE  =                    T / conforms to FITS standard                      BITPIX  =                  -64 / array data type                                NAXIS   =                    2 / number of array dimensions                     NAXIS1  =                 1024                                                  NAXIS2  =                  682                                                  BIAS    =                  100                                                  FOCALLEN= +0.000000000000E+000                                                  APTAREA = +0.000000000000E+000                                                  APTDIA  = +0.000000000000E+000                                                  DATE-OBS= '2020-04-18T00:56:58.604'                                             TIME-OBS= '00:56:58.604        '                                                SWCREATE= 'CCDSoft Version 5.00.218'                                            SET-TEMP= -2.000000000000E+001                                                  COLORCCD=                    0                                                  DISPCOLR=                    1                                                  IMAGETYP= 'Light Frame         '                                                CCDSFPT =                    1                                                  XORGSUBF=                    0                                                  YORGSUBF=                    0                                                  CCDSUBFL=                    0                                                  CCDSUBFT=                    0                                                  XBINNING=                    3                                                  CCDXBIN =                    3                                                  YBINNING=                    3                                                  CCDYBIN =                    3                                                  EXPSTATE=                  293                                                  CCD-TEMP= -2.041762134545E+001                                                  TEMPERAT= -2.041762134545E+001                                                  OBJECT  = 'Entered_Coordinates '                                                OBJCTRA = '14 49 09.474        '                                                OBJCTDEC= '+40 42 04.35        '                                                TELTKRA = -1.000000000000E+003                                                  TELTKDEC= -1.000000000000E+003                                                  CENTAZ  = +1.966280653172E+002                                                  CENTALT = +7.695155713274E+001                                                  TELHA   = '00 20 20.742        '                                                LST     = '15 09 30.056        '                                                AIRMASS = +1.026504260005E+000                                                  SITELAT = '+53:14:24.90        '                                                SITELONG= '-006:32:11.02       '                                                INSTRUME= 'SBIG STL-6303 3 CCD Camera'                                          EGAIN   = +2.360000000000E+000                                                  E-GAIN  = +2.360000000000E+000                                                  XPIXSZ  = +2.700000000000E+001                                                  YPIXSZ  = +2.700000000000E+001                                                  SBIGIMG =                   18                                                  USER_2  = 'SBIG STL-6303 3 CCD Camera'                                          DATAMAX =                65535                                                  SBSTDVER= 'SBFITSEXT Version 1.0'                                               FILTER  = 'R                   '                                                EXPTIME = +3.000000000000E+002                                                  EXPOSURE= +3.000000000000E+002                                                  CBLACK  =                 3754                                                  CWHITE  =                 4141                                                  END                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             ";
             }
@@ -432,7 +428,6 @@ mod parsing_old {
             None
         }
     }
-
 }
 
 #[allow(dead_code)]
@@ -441,7 +436,7 @@ mod parsing;
 use std::io::Read;
 use std::fs::File;
 
-type HeaderList<'a> = Vec<parsing_old::header::Keyword<'a>>;
+type HeaderList<'a> = Vec<parsing_old::header::RawKeyword<'a>>;
 pub struct Fits {}
 
 impl Fits {
@@ -455,5 +450,23 @@ impl Fits {
         } else {
             None
         }
+    }
+
+    pub fn open_new(filename: String) -> Option<i32> {
+        let mut f = File::open(filename).unwrap();
+
+        let mut buffer = Vec::new();
+
+        if let Ok(_) = f.read_to_end(&mut buffer) {
+            let mut iter = buffer.chunks_exact(definitions::BLOCK_SIZE);
+            let s = parsing::parse_header(&mut iter);
+            for i in s.iter() {
+                println!("{:?}", i);
+            }
+            None
+        } else {
+            None
+        }
+
     }
 }
