@@ -1,6 +1,7 @@
 use std::slice::Chunks;
 use std::str::Utf8Error;
 use std::{str, fmt};
+use tensor::Tensor;
 
 use crate::header::Header;
 use crate::{definitions, KeywordList, RawHeaderList};
@@ -454,11 +455,11 @@ mod data {
             }
             rem -= read;
         }
-        data
+    data
     }
 }
 
-pub fn read_fits_buffer<'a>(buffer: &'a Vec<u8>) -> Option<(Header, Option<Vec<f64>>)> {
+pub fn read_fits_buffer<'a>(buffer: &'a Vec<u8>) -> Option<(Header, Option<Tensor<f64>>)> {
     let mut blocks = buffer.chunks(definitions::BLOCK_SIZE);
 
     // Read header (PrimaryHDU) must always exist
@@ -468,11 +469,6 @@ pub fn read_fits_buffer<'a>(buffer: &'a Vec<u8>) -> Option<(Header, Option<Vec<f
     let bitpix = header.bitpix.to_int();
     let axes = &header.axes;
 
-
-
-    // Potentially convert the header to a HashMap
-    // Check if the data unit exists for the PrimaryHDU (look at NAXIS)
-
     // Calculate the total number of bytes
     let bytes: u64 = (axes.iter().product::<usize>() as u64 * (bitpix.abs() as u64)) / 8;
     // println!("Total bytes: {}", bytes);
@@ -480,6 +476,7 @@ pub fn read_fits_buffer<'a>(buffer: &'a Vec<u8>) -> Option<(Header, Option<Vec<f
 
     if bitpix == -64 {
         let data = data::chuncks_to_data_f64(&mut blocks, size, bytes);
+        let data = Tensor::from(data);
         // Move the parsed data into the array
         // let arr = Array::from_vec(data);
         // let arr = arr.into_shape(axes).unwrap();

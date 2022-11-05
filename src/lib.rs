@@ -30,6 +30,7 @@ use std::io::Read;
 use std::fs::File;
 
 use header::Header;
+use tensor::Tensor;
 
 type KeywordList = Vec<parsing::header::Keyword>;
 type RawHeaderList<'a> = Vec<parsing::header::HeaderChunk<'a>>;
@@ -117,7 +118,7 @@ pub mod header {
 // Only basic FITS file for now, i.e. with one HDU
 pub struct BasicFits {
     pub header: Header,
-    pub data: Option<Vec<f64>>,
+    pub data: Tensor<f64>,
 }
 
 impl BasicFits {
@@ -127,6 +128,7 @@ impl BasicFits {
 
         if let Ok(_) = f.read_to_end(&mut buffer) {
             let (header, data) = parsing::read_fits_buffer(&buffer)?;
+            let data = data.unwrap_or(Tensor::new());
             let fits = BasicFits{header, data};
             Some(fits)
         } else {
