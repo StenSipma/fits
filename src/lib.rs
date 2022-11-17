@@ -5,10 +5,14 @@ mod definitions {
     pub const BLOCK_SIZE: usize = 2880; // bytes per block
 
     // Header sizes
-    pub const HEADER_KEYWORD_SIZE: usize = 80; // characters per header keyword
-    pub const HEADER_KEYWORD_NAME_SIZE: usize = 8; // the length (#chars) of the keyword name (i.e. NAXIS)
-    pub const HEADER_VALUE_INDICATOR_SIZE: usize = 2; // the length (#chars) of the value indicator (i.e. '= ')
-    pub const HEADER_VALUE_SIZE: usize = 70; // the length (#chars) of the value in a keyword
+    /// characters per header keyword
+    pub const HEADER_KEYWORD_SIZE: usize = 80;
+    /// the length (#chars) of the keyword name (i.e. NAXIS)
+    pub const HEADER_KEYWORD_NAME_SIZE: usize = 8;
+    /// the length (#chars) of the value indicator (i.e. '= ')
+    pub const HEADER_VALUE_INDICATOR_SIZE: usize = 2;
+    /// the length (#chars) of the value in a keyword
+    pub const HEADER_VALUE_SIZE: usize = 70;
 
     pub const HEADER_VALUE_INDICATOR: &str = "= ";
 
@@ -122,6 +126,14 @@ pub struct BasicFits {
 }
 
 impl BasicFits {
+
+    pub fn from_bytes<'a>(bytes: Vec<u8>) -> Option<Self> {
+        let (header, data) = parsing::read_fits_buffer(&bytes)?;
+        let data = data.unwrap_or(Tensor::new());
+        let fits = BasicFits{header, data};
+        Some(fits)
+    }
+
     pub fn open<'a>(filename: &String) -> Option<Self> {
         let mut f = File::open(filename).ok()?;
         let mut buffer = Vec::new();
