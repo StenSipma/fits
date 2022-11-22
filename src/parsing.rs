@@ -233,6 +233,65 @@ pub mod header {
         }
     }
 
+    fn parse_keyword(line: &str) -> (Value, String) {
+        if line.is_empty() {
+            return (Value::Undefined, String::new());
+        }
+
+        // Convert to bytes so we can index
+        // let _value_bytes = line.as_bytes();
+
+        // Case we have a string
+        if line.starts_with("'") {
+            todo!("Extract string & comment value");
+        }
+        // if value_bytes[0] == b'\'' {
+        //     let mut extracted: Vec<u8> = Vec::new();
+        //     extract_str(value_bytes, &mut extracted);
+        //     return Value::Str(String::from_utf8(extracted).unwrap());
+        // }
+
+        // TODO: Verify that this split is correct.
+        let (value, comment) = match line.split_once([' ', '/']) {
+            Some((a, b)) => (a, b),
+            None => (line, ""),
+        };
+
+        // Case of only a comment
+        if value.is_empty() {
+            return (Value::Undefined, comment.to_string());
+        }
+
+        // Case of a boolean
+        if value.starts_with(['T', 'F']) {
+            return (Value::Boolean(value.starts_with("T")), comment.to_string());
+        }
+
+        // Case of a complex number
+        if value.starts_with('(') {
+            todo!("Implement complex numbers")
+        }
+
+        // Case of a exponent
+        // Case of a float
+        if value.find(['.', 'E', 'D']).is_some() {
+            let num = value.parse().unwrap();
+            return (Value::Float(num), comment.to_string());
+        }
+
+        // Case of a integer
+        if value
+            .chars()
+            .all(|x| x.is_numeric() || x == '-' || x == '+')
+        {
+            let num = value.parse().unwrap();
+            return (Value::Integer(num), comment.to_string());
+        }
+
+        // No case matched
+        (Value::Undefined, String::new())
+    }
+
     fn extract_str<'a>(input: &'a [u8], output: &mut Vec<u8>) {
         // We know input[0] == b'\''
         let mut i: usize = 1;
