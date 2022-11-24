@@ -1,8 +1,8 @@
-use core::result::Result;
 use std::slice::Chunks;
 use std::str::Utf8Error;
 use std::{fmt, str};
 use tensor::Tensor;
+use core::result::Result;
 
 use crate::header::Header;
 use crate::{definitions, KeywordList, RawHeaderList};
@@ -26,11 +26,7 @@ pub mod header {
             // This is just a basic print function, mainly for a bit better debugging
             match self {
                 Keyword::Value(kw, value, comment) => {
-                    let cmt = if comment.len() > 0 {
-                        format!(" / {}", comment)
-                    } else {
-                        "".to_string()
-                    };
+                    let cmt = if comment.len() > 0 {format!(" / {}", comment)} else {"".to_string()};
                     println!("{:8} | {:>30}{}", kw, value, cmt)
                 }
                 Keyword::Continue(kw, value, comment) => {
@@ -128,11 +124,10 @@ pub mod header {
     }
 
     impl fmt::Display for Value {
-        // TODO: Add functionality for formatting, like padding and alignment
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             match self {
                 Value::Undefined => {
-                    write!(f, "UNDEFINED")
+                    write!(f, "")
                 }
                 Value::Integer(x) => {
                     write!(f, "{}", x)
@@ -266,7 +261,8 @@ pub mod header {
             i += 1;
         }
         let (extract, rest) = input.split_at(i);
-        let string_value = String::from_utf8(extract[1..].to_vec())?.replace("''", "'");
+        let string_value = String::from_utf8(extract[1..].to_vec())?
+            .replace("''", "'");
 
         // TODO: Check that the stuff before the comment is empty
         let rest = String::from_utf8(rest.to_vec())?;
