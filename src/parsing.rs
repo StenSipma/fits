@@ -1,10 +1,10 @@
 use std::slice::Chunks;
 use std::str::Utf8Error;
 use std::{fmt, str};
-use tensor::Tensor;
+use ndarray::Array1;
 
 use crate::header::Header;
-use crate::{definitions, KeywordList, RawHeaderList};
+use crate::{definitions, KeywordList, RawHeaderList, GenericData};
 
 pub mod header {
     use crate::definitions::HEADER_CONTINUE_KEYWORD;
@@ -399,7 +399,7 @@ pub mod header {
         None
     }
 
-    pub fn extract_values(header: &KeywordList) -> (bool, usize, Vec<usize>, i64) {
+    pub fn extract_values(header: &KeywordList) -> Option<(bool, usize, Vec<usize>, i64)> {
         let simple = {
             let value_simple = find_value(header, "SIMPLE").unwrap_or(Value::Boolean(false));
             if let Value::Boolean(b) = value_simple {
@@ -410,7 +410,7 @@ pub mod header {
         };
 
         let naxis = {
-            let value_naxis = find_value(header, "NAXIS").unwrap();
+            let value_naxis = find_value(header, "NAXIS")?;
             if let Value::Integer(i) = value_naxis {
                 i as usize
             } else {
@@ -419,7 +419,7 @@ pub mod header {
         };
 
         let bitpix = {
-            let value_bitpix = find_value(header, "BITPIX").unwrap();
+            let value_bitpix = find_value(header, "BITPIX")?;
             if let Value::Integer(i) = value_bitpix {
                 i
             } else {
@@ -431,7 +431,7 @@ pub mod header {
         for i in 1..=naxis {
             let kw = format!("NAXIS{}", i);
             let kw = kw.as_str();
-            let value_axis = find_value(header, kw).unwrap();
+            let value_axis = find_value(header, kw)?;
             if let Value::Integer(i) = value_axis {
                 axes.push(i as usize);
             } else {
@@ -439,7 +439,7 @@ pub mod header {
             }
         }
 
-        (simple, naxis, axes, bitpix)
+        Some((simple, naxis, axes, bitpix))
     }
 
     #[cfg(test)]
@@ -573,7 +573,7 @@ mod data {
     }
 }
 
-pub fn read_fits_buffer<'a>(buffer: &'a Vec<u8>) -> Option<(Header, Option<Tensor<f64>>)> {
+pub fn read_fits_buffer<'a>(buffer: &'a Vec<u8>) -> Option<(Header, Option<GenericData<f64>>)> {
     let mut blocks = buffer.chunks(definitions::BLOCK_SIZE);
 
     // Read header (PrimaryHDU) must always exist
@@ -590,7 +590,8 @@ pub fn read_fits_buffer<'a>(buffer: &'a Vec<u8>) -> Option<(Header, Option<Tenso
 
     if bitpix == -64 {
         let data = data::chuncks_to_data_f64(&mut blocks, size, bytes);
-        let data = Tensor::from(data);
+        let data = Array1::from_vec(data).into_dyn();
+        // let data = Tensor::from(data);
         // Move the parsed data into the array
         // let arr = Array::from_vec(data);
         // let arr = arr.into_shape(axes).unwrap();

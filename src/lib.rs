@@ -35,26 +35,30 @@ use std::fs::File;
 use std::io::Read;
 
 use header::Header;
-use tensor::Tensor;
+use ndarray::{Array, IxDyn};
 
 type KeywordList = Vec<parsing::header::Keyword>;
 type RawHeaderList<'a> = Vec<parsing::header::HeaderChunk<'a>>;
+pub type GenericData<T> = Array<T, IxDyn>;
 
 pub mod header {
+    use tightness::bound;
+
     use crate::parsing::header::extract_values;
     use crate::KeywordList;
 
     pub struct Header {
         pub simple: bool,
         pub bitpix: Bitpix,
-        pub naxis: usize, // Range 0-999
+        pub naxis: Naxis,
         pub axes: Vec<usize>,
         pub keywords: KeywordList,
     }
 
     impl Header {
         pub fn from_keyword_list(keywords: KeywordList) -> Option<Self> {
-            let (simple, naxis, axes, bitpix) = extract_values(&keywords);
+            let (simple, naxis, axes, bitpix) = extract_values(&keywords)?;
+            let naxis = Naxis::new(naxis).ok()?;
             let bitpix = Bitpix::from_int(bitpix)?;
             Some(Header {
                 simple,
@@ -71,6 +75,9 @@ pub mod header {
             }
         }
     }
+
+    // usize already guarentees that it is >= 0
+    bound!(pub Naxis: usize where |u| (*u <= 999) );
 
     // See Table 8 of FITS standard (2018)
     #[derive(PartialEq, Debug, Clone)]
@@ -128,13 +135,13 @@ pub mod header {
 // Only basic FITS file for now, i.e. with one HDU
 pub struct BasicFits {
     pub header: Header,
-    pub data: Tensor<f64>,
+    pub data: GenericData<f64>,
 }
 
 impl BasicFits {
     pub fn from_bytes<'a>(bytes: Vec<u8>) -> Option<Self> {
         let (header, data) = parsing::read_fits_buffer(&bytes)?;
-        let data = data.unwrap_or(Tensor::new());
+        let data = data.unwrap_or(GenericData::zeros(Vec::new()));
         let fits = BasicFits { header, data };
         Some(fits)
     }
@@ -144,10 +151,11 @@ impl BasicFits {
         let mut buffer = Vec::new();
 
         if let Ok(_) = f.read_to_end(&mut buffer) {
-            let (header, data) = parsing::read_fits_buffer(&buffer)?;
-            let data = data.unwrap_or(Tensor::new());
-            let fits = BasicFits { header, data };
-            Some(fits)
+            Self::from_bytes(buffer) // TODO: Check if this is good?
+            // let (header, data) = parsing::read_fits_buffer(&buffer)?;
+            // let data = data.unwrap_or(Tensor::new());
+            // let fits = BasicFits { header, data };
+            // Some(fits)
         } else {
             None
         }
